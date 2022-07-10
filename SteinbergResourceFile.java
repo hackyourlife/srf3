@@ -11,7 +11,11 @@ import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
 
 public class SteinbergResourceFile {
-	private static final int SRF3_MAGIC = 0x53524633; // 'SRF3'
+	private static final String HEADER = "Steinberg Resource File\r\n";
+	private static final int SRF3_MAGIC = 0x53524633;
+	private static final int SRFF_MAGIC = 0x53524646;
+
+	private int format;
 
 	private byte[] data;
 
@@ -45,18 +49,22 @@ public class SteinbergResourceFile {
 	}
 
 	private void parse() throws IOException {
-		int signature = get32bitBE(data, data.length - 4);
-		if(signature != SRF3_MAGIC) {
-			throw new IOException("not an SRF3 file");
+		for(int i = 0; i < HEADER.length(); i++) {
+			if(data[i] != HEADER.charAt(i)) {
+				throw new IOException("not an SRF file");
+			}
 		}
+
+		int signature = get32bitBE(data, data.length - 4);
+		if(signature != SRF3_MAGIC && signature != SRFF_MAGIC) {
+			throw new IOException("not an SRF3/SRFF file");
+		}
+
+		format = signature;
 
 		int footerSize = get32bitLE(data, data.length - 8);
 		int entryCount = get32bitLE(data, data.length - 12);
 		int length = get32bitLE(data, data.length - 16);
-
-		if(footerSize != 0x30) {
-			throw new IOException("expected footer of size 0x30, got 0x" + Integer.toHexString(footerSize));
-		}
 
 		int offset = data.length - length - footerSize;
 
@@ -65,7 +73,7 @@ public class SteinbergResourceFile {
 
 		int ptr = offset;
 		int cnt = 0;
-		while(ptr < data.length - 48) {
+		while(ptr < data.length - footerSize) {
 			Entry entry = parseEntry(folder, ptr);
 			ptr += entry.getMetadataSize();
 			cnt++;
@@ -107,9 +115,18 @@ public class SteinbergResourceFile {
 					Integer.toHexString(offset) + ")");
 		}
 
-		for(int i = 0; i < values.length; i++) {
-			values[i] = get64bitLE(data, ptr);
-			ptr += 8;
+		if(format == SRF3_MAGIC) {
+			for(int i = 0; i < values.length; i++) {
+				values[i] = get64bitLE(data, ptr);
+				ptr += 8;
+			}
+		} else if(format == SRFF_MAGIC) {
+			for(int i = 0; i < values.length; i++) {
+				values[i] = get32bitLE(data, ptr);
+				ptr += 4;
+			}
+		} else {
+			throw new IOException("unknown file format " + format);
 		}
 
 		StringBuilder buf = new StringBuilder();
